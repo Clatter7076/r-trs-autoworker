@@ -10,14 +10,10 @@ from loguru import logger
 from websockets.exceptions import ConnectionClosedError, WebSocketException
 from aiohttp import web
 
-# Function to handle the connection directly to the URI
 async def connect_and_maintain(user_id):
-    # Hardcoded connection details
     uri = "wss://proxy2.wynd.network:4650/"
-    
-    device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, uri))  # Use URI for device_id
+    device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, uri))
 
-    # Add user-agent and other headers
     custom_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
     }
@@ -30,7 +26,13 @@ async def connect_and_maintain(user_id):
     while True:
         try:
             await asyncio.sleep(random.randint(1, 10) / 10)  # Random delay
-            async with websockets.connect(uri, ssl=ssl_context, extra_headers=custom_headers) as websocket:
+            async with websockets.connect(
+                uri,
+                ssl=ssl_context,
+                extra_headers=custom_headers,
+                subprotocols=None,
+                compression=None
+            ) as websocket:
                 connection_attempts = 0  # Reset connection attempts
 
                 logger.info(f"Connected to {uri} with user_id {user_id}")
@@ -81,23 +83,6 @@ async def connect_and_maintain(user_id):
         except Exception as e:
             connection_attempts += 1
             logger.error(f"Unexpected error: {e}")
-            await asyncio.sleep(5)
-
-async def send_ping(websocket):
-    while True:
-        try:
-            send_message = json.dumps({
-                "id": str(uuid.uuid4()),
-                "version": "1.0.0",
-                "action": "PING",
-                "data": {}
-            })
-            await websocket.send(send_message)
-            await asyncio.sleep(20)  # Send ping every 20 seconds
-        except (ConnectionClosedError, WebSocketException, asyncio.CancelledError):
-            break
-        except Exception as e:
-            logger.error(f"Error in send_ping: {e}")
             await asyncio.sleep(5)
 
 # API endpoint handlers
