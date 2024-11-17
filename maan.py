@@ -29,10 +29,13 @@ async def connect_and_maintain(user_id):
             async with websockets.connect(
                 uri,
                 ssl=ssl_context,
-                extra_headers=custom_headers,
                 subprotocols=None,
                 compression=None
             ) as websocket:
+                # Send custom headers after connection
+                for key, value in custom_headers.items():
+                    await websocket.send(f"{key}: {value}")
+
                 connection_attempts = 0  # Reset connection attempts
 
                 logger.info(f"Connected to {uri} with user_id {user_id}")
