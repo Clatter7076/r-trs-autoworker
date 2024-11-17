@@ -4,6 +4,7 @@ on:
   schedule:
     # This cron expression runs the job every 6 hours.
     - cron: "0 */6 * * *"  # Runs at the top of every 6th hour (UTC)
+  workflow_dispatch:
 
 jobs:
   long_running:
