@@ -7,96 +7,41 @@ import uuid
 import subprocess
 import sys
 import argparse
-
-# List of required modules
-required_modules = [
-    "loguru",
-    "websockets",
-    "aiohttp",
-    "weakref",
-]
-
-# Function to check and install missing modules
-def check_and_install_modules():
-    for module in required_modules:
-        try:
-            __import__(module)
-        except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", module])
-
-check_and_install_modules()
-
 from loguru import logger
 from websockets.exceptions import ConnectionClosedError, WebSocketException
 from aiohttp import web
 import weakref
 import os
 
-# Load user proxies from configuration JSON file
-USER_PROXIES_FILE = "user_proxies.json"
-try:
-    with open(USER_PROXIES_FILE, 'r') as f:
-        user_proxies = json.load(f)
-except FileNotFoundError:
-    user_proxies = {}
-
-# Keep track of active websocket connections
-active_connections = weakref.WeakSet()
-
-def save_working_proxy(user_id, proxy):
-    # Remove proxy support, only saving user_id related data
-    pass
-
-async def send_ping(websocket, user_id):
-    try:
-        while True:
-            send_message = json.dumps({
-                "id": str(uuid.uuid4()),
-                "version": "1.0.0",
-                "action": "PING",
-                "data": {}
-            })
-            await websocket.send(send_message)
-            await asyncio.sleep(20)
-    except (ConnectionClosedError, WebSocketException, asyncio.CancelledError):
-        await asyncio.sleep(5)
-        raise
-
-async def connect_and_maintain(proxy_info, user_id):
-    device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, proxy_info['url']))
+# Function to handle the connection directly to the URI and manage proxies
+async def connect_and_maintain(user_id):
+    # Hardcoded connection details
+    uri = "wss://proxy2.wynd.network:4650/"
+    server_hostname = "proxy.wynd.network"
     
-    # Find username for this user_id
-    username = next((name for name, info in user_proxies.items() if info['id'] == user_id), None)
+    device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, uri))  # Use URI for device_id
+
+    # Add user-agent and other headers
+    custom_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
+    }
     
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
     connection_attempts = 0
     while True:
         try:
-            await asyncio.sleep(random.randint(1, 10) / 10)
-            # add more user agents here (bUT THIS IS DESKTOP NODE USER AGENT)
-            custom_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
-            }
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            uri = "wss://proxy2.wynd.network:4650/"
-            server_hostname = "proxy.wynd.network"
-
-            # No proxy support here, direct WebSocket connection
+            await asyncio.sleep(random.randint(1, 10) / 10)  # Random delay
+            # Establish connection
             async with websockets.connect(uri, ssl=ssl_context, extra_headers=custom_headers) as websocket:
-                
-                # Reset connection attempts on successful connection
-                connection_attempts = 0
-                
-                # Track active connection
-                active_connections.add(websocket)
-                if username:
-                    user_proxies[username]['active_connections'] += 1
-                logger.info(f"Connected with server {uri}")
+                connection_attempts = 0  # Reset connection attempts
 
-                # Save working proxy
-                save_working_proxy(user_id, proxy_info['url'])
+                # Log successful connection
+                logger.info(f"Connected to {uri} with user_id {user_id}")
 
+                # Send a ping every 20 seconds to keep connection alive
                 ping_task = asyncio.create_task(send_ping(websocket, user_id))
 
                 try:
@@ -133,54 +78,32 @@ async def connect_and_maintain(proxy_info, user_id):
                         await ping_task
                     except asyncio.CancelledError:
                         pass
-                    # Remove from active connections
-                    active_connections.discard(websocket)
-                    if username:
-                        user_proxies[username]['active_connections'] = max(0, user_proxies[username]['active_connections'] - 1)
-                    logger.info(f"Disconnected from server {uri}")
 
         except (ConnectionClosedError, WebSocketException, asyncio.CancelledError) as e:
             connection_attempts += 1
-            logger.error(f"Error with connection to {uri}: {e} (Attempt {connection_attempts})")
+            logger.error(f"Error with connection {uri}: {e} (Attempt {connection_attempts})")
             if connection_attempts >= 10:
-                logger.warning(f"Connection to {uri} failed 10 times, generating new session ID")
-                connection_attempts = 0
-            await asyncio.sleep(5)
+                logger.warning(f"Connection {uri} failed 10 times, retrying...")
+            await asyncio.sleep(5)  # Retry after delay
         except Exception as e:
             connection_attempts += 1
             logger.error(f"Unexpected error: {e}")
             await asyncio.sleep(5)
 
-async def manage_proxies(user_id, proxy_count, base_urls, base_urls_suffix):
-    while True:  # Keep trying to maintain connections
-        tasks = []
-        
-        # First try to use working proxies from previous runs (this part is simplified as no proxies are used now)
-        if user_id in working_proxies:
-            for proxy in working_proxies[user_id][:proxy_count]:
-                tasks.append(asyncio.create_task(connect_and_maintain(proxy, user_id)))
-        
-        try:
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            logger.error(f"Error in manage_proxies: {e}")
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.sleep(5)  # Wait before retrying
-
-async def print_proxy_status():
-    while True:
-        print("\033[H\033[J")
-        print("Proxy Status")
-        print("============")
-        for user_id, user_info in user_proxies.items():
-            print(f"User: {user_id}")
-            print(f"ID: {user_info['id']}")
-            print(f"Working Proxies: {user_info['count']}")
-            print(f"Active Connections: {user_info['active_connections']}")
+async def send_ping(websocket, user_id):
+    try:
+        while True:
+            send_message = json.dumps({
+                "id": str(uuid.uuid4()),
+                "version": "1.0.0",
+                "action": "PING",
+                "data": {}
+            })
+            await websocket.send(send_message)
+            await asyncio.sleep(20)  # Send ping every 20 seconds
+    except (ConnectionClosedError, WebSocketException, asyncio.CancelledError):
         await asyncio.sleep(5)
+        raise
 
 # API endpoint handlers
 async def get_status(request):
@@ -205,20 +128,14 @@ async def run_api():
     await site.start()
 
 async def main():
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Manage WebSocket connections with user ID")
-    parser.add_argument('user_id', type=str, help='User ID to connect with')
-    args = parser.parse_args()
-
     tasks = []
     # Start API server
     tasks.append(asyncio.create_task(run_api()))
     
-    # Initialize user_id for connection management
-    tasks.append(asyncio.create_task(manage_proxies(args.user_id, 5, ["base_url1", "base_url2"], ["suffix1", "suffix2"])))
-    
-    tasks.append(asyncio.create_task(print_proxy_status()))
-    
+    # Loop through users and start connection maintenance
+    for user_id, user_info in user_proxies.items():
+        tasks.append(asyncio.create_task(connect_and_maintain(user_info['id'])))
+
     try:
         await asyncio.gather(*tasks)
     except Exception as e:
