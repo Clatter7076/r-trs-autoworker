@@ -7,6 +7,7 @@ import uuid
 import subprocess
 import sys
 import argparse
+import websockets
 from loguru import logger
 from websockets.exceptions import ConnectionClosedError, WebSocketException
 from aiohttp import web
