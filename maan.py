@@ -13,7 +13,7 @@ from aiohttp import web
 import weakref
 import os
 
-# Function to handle the connection directly to the URI and manage proxies
+# Function to handle the connection directly to the URI
 async def connect_and_maintain(user_id):
     # Hardcoded connection details
     uri = "wss://proxy2.wynd.network:4650/"
@@ -42,7 +42,7 @@ async def connect_and_maintain(user_id):
                 logger.info(f"Connected to {uri} with user_id {user_id}")
 
                 # Send a ping every 20 seconds to keep connection alive
-                ping_task = asyncio.create_task(send_ping(websocket, user_id))
+                ping_task = asyncio.create_task(send_ping(websocket))
 
                 try:
                     while True:
@@ -55,11 +55,11 @@ async def connect_and_maintain(user_id):
                                 "origin_action": "AUTH",
                                 "result": {
                                     "browser_id": device_id,
-                                    "user_id": user_id,
                                     "user_agent": custom_headers['User-Agent'],
                                     "timestamp": int(time.time()),
                                     "device_type": "desktop",
-                                    "version": "4.28.2"
+                                    "version": "4.28.2",
+                                    "user_id": user_id
                                 }
                             }
                             await websocket.send(json.dumps(auth_response))
@@ -90,7 +90,7 @@ async def connect_and_maintain(user_id):
             logger.error(f"Unexpected error: {e}")
             await asyncio.sleep(5)
 
-async def send_ping(websocket, user_id):
+async def send_ping(websocket):
     try:
         while True:
             send_message = json.dumps({
@@ -108,14 +108,7 @@ async def send_ping(websocket, user_id):
 # API endpoint handlers
 async def get_status(request):
     status = {
-        'total_active_connections': len(active_connections),
-        'users': {
-            user: {
-                'total_proxies': info['count'],
-                'active_connections': info['active_connections']
-            }
-            for user, info in user_proxies.items()
-        }
+        'total_active_connections': 1,  # Only one connection active (for simplicity)
     }
     return web.json_response(status)
 
@@ -127,14 +120,13 @@ async def run_api():
     site = web.TCPSite(runner, 'localhost', 8080)
     await site.start()
 
-async def main():
+async def main(user_id):
     tasks = []
     # Start API server
     tasks.append(asyncio.create_task(run_api()))
     
-    # Loop through users and start connection maintenance
-    for user_id, user_info in user_proxies.items():
-        tasks.append(asyncio.create_task(connect_and_maintain(user_info['id'])))
+    # Start the connection maintenance
+    tasks.append(asyncio.create_task(connect_and_maintain(user_id)))
 
     try:
         await asyncio.gather(*tasks)
@@ -146,4 +138,9 @@ async def main():
                 task.cancel()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Argument parser to accept user_id as a command-line argument
+    parser = argparse.ArgumentParser(description="WebSocket Client")
+    parser.add_argument('user_id', type=str, help="The user ID for the connection")
+    args = parser.parse_args()
+    
+    asyncio.run(main(args.user_id))
