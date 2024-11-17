@@ -10,6 +10,23 @@ from loguru import logger
 from websockets.exceptions import ConnectionClosedError, WebSocketException
 from aiohttp import web
 
+async def send_ping(websocket):
+    while True:
+        try:
+            send_message = json.dumps({
+                "id": str(uuid.uuid4()),
+                "version": "1.0.0",
+                "action": "PING",
+                "data": {}
+            })
+            await websocket.send(send_message)
+            await asyncio.sleep(20)  # Send ping every 20 seconds
+        except (ConnectionClosedError, WebSocketException, asyncio.CancelledError):
+            break
+        except Exception as e:
+            logger.error(f"Error in send_ping: {e}")
+            await asyncio.sleep(5)
+
 async def connect_and_maintain(user_id):
     uri = "wss://proxy2.wynd.network:4650/"
     device_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, uri))
