@@ -1,0 +1,38 @@
+name: Long Running Job (6-hour Rerun)
+
+on:
+  schedule:
+    # This cron expression runs the job every 6 hours.
+    - cron: "0 */6 * * *"  # Runs at the top of every 6th hour (UTC)
+
+jobs:
+  long_running:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # Set the timeout for 6 hours (360 minutes)
+
+    steps:
+      # Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Python environment (or other environment as required)
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # Install dependencies (if any)
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # Run the main script or task
+      - name: Run script
+        run: |
+          python maan.py ${{ secrets.USER_ID }}
+
+      # Optional: Log job status or save output if needed
+      - name: Save output
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/output
+          echo "Job ran at $(date)" > $GITHUB_WORKSPACE/output/job_status.txt
